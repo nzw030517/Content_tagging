@@ -2760,6 +2760,190 @@ def apply_filter_value(df: pd.DataFrame, col: str, value: str, empty_label: str 
         return df[df[col].fillna("").astype(str).str.strip().eq("")]
     return df[df[col].fillna("").astype(str).str.strip().eq(value)]
 
+
+def render_platform_add_posts_v68_43(platform: str, drama_audio_note: str) -> None:
+    """Render one platform-specific file and link input area."""
+    platform_label = "Instagram Reels" if platform == INSTAGRAM_REELS else "TikTok"
+    platform_short = "instagram" if platform == INSTAGRAM_REELS else "tiktok"
+
+    st.markdown(
+        f"<div class='card'><h3>Add {esc(platform_label)} posts</h3>"
+        f"<p class='sub'>Upload {esc(platform_label)} files or paste direct post links.</p>",
+        unsafe_allow_html=True,
+    )
+    st.info(drama_audio_note, icon=":material/info:")
+
+    st.markdown(f"<h4>Upload {esc(platform_label)} files</h4>", unsafe_allow_html=True)
+    files = st.file_uploader(
+        f"{platform_label} post data files",
+        type=["csv", "xlsx", "xls"],
+        accept_multiple_files=True,
+        label_visibility="collapsed",
+        key=f"{platform_short}_files_upload_v68_43",
+    )
+    parsed_frames = []
+    summary_rows = []
+    errors = []
+    if files:
+        for uploaded_file in files:
+            try:
+                source_df = read_any_table(uploaded_file)
+                all_rows, _ = standardize_file_rows(source_df, uploaded_file.name)
+                platform_rows, _ = standardize_file_rows(
+                    source_df,
+                    uploaded_file.name,
+                    platform=platform,
+                )
+                parsed_frames.append(platform_rows)
+                other_platform_rows = max(len(all_rows) - len(platform_rows), 0)
+                markets = sorted([
+                    market for market in platform_rows.get("Market", pd.Series(dtype=str)).fillna("").unique().tolist()
+                    if safe_str(market)
+                ])
+                tracks = sorted([
+                    track for track in platform_rows.get("Track", pd.Series(dtype=str)).fillna("").unique().tolist()
+                    if safe_str(track)
+                ])
+                summary_rows.append({
+                    "File": uploaded_file.name,
+                    f"{platform_label} posts": len(platform_rows),
+                    "Other platform rows": other_platform_rows,
+                    "Markets": ", ".join(markets[:3]) + ("..." if len(markets) > 3 else "") if markets else "Not specified",
+                    "Tracks": ", ".join(tracks[:2]) + ("..." if len(tracks) > 2 else "") if tracks else "Not specified",
+                })
+            except Exception as exc:
+                errors.append(f"{uploaded_file.name}: {exc}")
+        if summary_rows:
+            st.markdown(render_table(pd.DataFrame(summary_rows), max_rows=10), unsafe_allow_html=True)
+        if errors:
+            st.markdown("<div class='warn-note'>" + "<br>".join(map(esc, errors)) + "</div>", unsafe_allow_html=True)
+        combined_upload = pd.concat(parsed_frames, ignore_index=True) if parsed_frames else pd.DataFrame()
+        if not combined_upload.empty:
+            if st.button(
+                f"Add uploaded {platform_label} rows to batch",
+                type="primary",
+                width="stretch",
+                key=f"add_{platform_short}_uploaded_rows_v68_43",
+            ):
+                added, skipped = append_to_batch(combined_upload)
+                st.session_state.last_message = (
+                    f"Added {added} uploaded {platform_label} rows. "
+                    f"Skipped {skipped} duplicate rows."
+                )
+                st.rerun()
+        elif not errors:
+            st.warning(f"No {platform_label} post links were found in the selected files.")
+    else:
+        st.markdown("<p class='sub'>No file selected yet.</p>", unsafe_allow_html=True)
+
+    st.markdown("<hr>", unsafe_allow_html=True)
+    st.markdown(f"<h4>Paste {esc(platform_label)} links</h4>", unsafe_allow_html=True)
+    link_text = st.text_area(
+        f"{platform_label} post links",
+        placeholder=f"Paste one {platform_label} post link per line",
+        height=150,
+        key=f"{platform_short}_link_text_v68_43",
+    )
+    c1, c2, c3 = st.columns([1.05, 0.85, 0.75])
+    with c1:
+        paste_track = st.text_input(
+            "Campaign track / sound name (optional)",
+            placeholder="Song title",
+            help="Enter the song title. If left blank, the app will use the detected platform audio name.",
+            key=f"{platform_short}_campaign_track_v68_43",
+        )
+    with c2:
+        paste_artist = st.text_input(
+            "Artist name (optional)",
+            placeholder="Only if needed",
+            help="Add the artist only when songs share the same title or the catalogue match is incorrect.",
+            key=f"{platform_short}_campaign_artist_v68_43",
+        )
+    campaign_track_lookup = " - ".join(
+        part for part in [safe_str(paste_artist), safe_str(paste_track)] if part
+    )
+    with c1:
+        if safe_str(paste_track):
+            with st.spinner("Checking the track name..."):
+                track_status = campaign_track_catalog_status_v68_36(campaign_track_lookup)
+            if track_status.get("status") == "matched":
+                matched_title = " — ".join(
+                    part for part in [
+                        safe_str(track_status.get("artist_name")),
+                        safe_str(track_status.get("track_name")),
+                    ] if part
+                )
+                st.success(
+                    f"Track confirmed in Apple Music/iTunes: {matched_title}. "
+                    "If this is not the intended artist, fill in the optional Artist field."
+                )
+            else:
+                st.warning(
+                    f"Could not confirm ‘{campaign_track_lookup}’ in Apple Music/iTunes. "
+                    "Check the spelling. You can still continue because regional, niche, "
+                    "or unreleased tracks may not be listed."
+                )
+    with c3:
+        market_choice = st.selectbox(
+            "Market",
+            MARKET_OPTIONS,
+            index=0,
+            key=f"{platform_short}_market_v68_43",
+        )
+        paste_market = "" if market_choice == "Other / no market" else market_choice
+
+    all_links = parse_links(link_text)
+    links = parse_links(link_text, platform=platform)
+    other_platform_links = max(len(all_links) - len(links), 0)
+    market_label = paste_market if paste_market else "Other"
+    st.markdown(
+        f"<div class='pill-row'><span class='pill green'>{esc(platform_label)} links: {len(links)}</span>"
+        f"<span class='pill blue'>Market: {esc(market_label)}</span></div>",
+        unsafe_allow_html=True,
+    )
+    if other_platform_links:
+        st.warning(
+            f"{other_platform_links} link(s) from the other platform will not be added from this tab."
+        )
+    if st.button(
+        f"Add pasted {platform_label} links to batch",
+        type="primary",
+        width="stretch",
+        key=f"add_{platform_short}_pasted_links_v68_43",
+    ):
+        if not links:
+            st.warning(f"Paste at least one valid {platform_label} post link first.")
+        else:
+            rows = []
+            for link in links:
+                rows.append({
+                    "Platform": platform,
+                    "Source": "Pasted links",
+                    "Input Type": "Pasted",
+                    "Link": link,
+                    "Market": paste_market,
+                    "Track": safe_str(paste_track),
+                    "Campaign Artist": safe_str(paste_artist),
+                    "Viral Date": "",
+                    "Date": "",
+                    "Creator": extract_creator(link),
+                    "Views": 0,
+                    "Likes": 0,
+                    "Comments": 0,
+                    "Shares": 0,
+                    "Saves": 0,
+                    "Metrics Unavailable": "Shares, Saves" if platform == INSTAGRAM_REELS else "",
+                    "Total Engagement": 0,
+                })
+            added, skipped = append_to_batch(pd.DataFrame(rows))
+            st.session_state.last_message = (
+                f"Added {added} pasted {platform_label} links. "
+                f"Skipped {skipped} duplicate links."
+            )
+            st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
 # -----------------------------------------------------------------------------
 # Application shell and workflow pages
 # -----------------------------------------------------------------------------
@@ -2822,142 +3006,11 @@ elif st.session_state.step == 2:
         "Without a track name, Audio Version may remain **Unknown**."
     )
 
-    add_tab, paste_tab = st.tabs(["Upload post files", "Paste post links"])
-
-    with add_tab:
-        st.markdown("<div class='card'><h3>Upload post files</h3><p class='sub'>CSV or Excel files with TikTok or Instagram post links. You can select multiple files or mix both platforms in one file.</p>", unsafe_allow_html=True)
-        st.info(drama_audio_note, icon=":material/info:")
-        files = st.file_uploader(
-            "Post data files",
-            type=["csv", "xlsx", "xls"],
-            accept_multiple_files=True,
-            label_visibility="collapsed",
-            key="files_upload_v24",
-        )
-        parsed_frames = []
-        summary_rows = []
-        errors = []
-        if files:
-            for f in files:
-                try:
-                    df = read_any_table(f)
-                    std, cols = standardize_file_rows(df, f.name)
-                    parsed_frames.append(std)
-                    platforms = sorted([
-                        p for p in std.get("Platform", pd.Series(dtype=str)).fillna("").unique().tolist()
-                        if safe_str(p)
-                    ])
-                    markets = sorted([m for m in std.get("Market", pd.Series(dtype=str)).fillna("").unique().tolist() if safe_str(m)])
-                    tracks = sorted([t for t in std.get("Track", pd.Series(dtype=str)).fillna("").unique().tolist() if safe_str(t)])
-                    summary_rows.append({
-                        "File": f.name,
-                        "Posts": len(std),
-                        "Platforms": ", ".join(platforms) if platforms else "Not detected",
-                        "Markets": ", ".join(markets[:3]) + ("..." if len(markets) > 3 else "") if markets else "Not specified",
-                        "Tracks": ", ".join(tracks[:2]) + ("..." if len(tracks) > 2 else "") if tracks else "Not specified",
-                    })
-                except Exception as e:
-                    errors.append(f"{f.name}: {e}")
-            if summary_rows:
-                st.markdown(render_table(pd.DataFrame(summary_rows), max_rows=10), unsafe_allow_html=True)
-            if errors:
-                st.markdown("<div class='warn-note'>" + "<br>".join(map(esc, errors)) + "</div>", unsafe_allow_html=True)
-            combined_upload = pd.concat(parsed_frames, ignore_index=True) if parsed_frames else pd.DataFrame()
-            if not combined_upload.empty:
-                if st.button("Add uploaded rows to batch", type="primary", width="stretch"):
-                    added, skipped = append_to_batch(combined_upload)
-                    st.session_state.last_message = f"Added {added} uploaded rows. Skipped {skipped} duplicate rows."
-                    st.rerun()
-        else:
-            st.markdown("<p class='sub'>No file selected yet.</p>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    with paste_tab:
-        st.markdown("<div class='card'><h3>Paste post links</h3><p class='sub'>Paste TikTok or Instagram post links together. The platform is detected automatically for each link.</p>", unsafe_allow_html=True)
-        st.info(drama_audio_note, icon=":material/info:")
-        link_text = st.text_area(
-            "Post links",
-            placeholder="Paste one TikTok or Instagram post link per line",
-            height=150,
-        )
-        c1, c2, c3 = st.columns([1.05, 0.85, 0.75])
-        with c1:
-            paste_track = st.text_input(
-                "Campaign track / sound name (optional)",
-                placeholder="Song title",
-                help="Enter the song title. If left blank, the app will use the detected platform audio name.",
-                key="pasted_campaign_track_v68_39",
-            )
-        with c2:
-            paste_artist = st.text_input(
-                "Artist name (optional)",
-                placeholder="Only if needed",
-                help="Add the artist only when songs share the same title or the catalogue match is incorrect.",
-                key="pasted_campaign_artist_v68_39",
-            )
-        campaign_track_lookup = " - ".join(
-            part for part in [safe_str(paste_artist), safe_str(paste_track)] if part
-        )
-        with c1:
-            if safe_str(paste_track):
-                with st.spinner("Checking the track name..."):
-                    track_status = campaign_track_catalog_status_v68_36(campaign_track_lookup)
-                if track_status.get("status") == "matched":
-                    matched_title = " — ".join(
-                        part for part in [
-                            safe_str(track_status.get("artist_name")),
-                            safe_str(track_status.get("track_name")),
-                        ] if part
-                    )
-                    st.success(
-                        f"Track confirmed in Apple Music/iTunes: {matched_title}. "
-                        "If this is not the intended artist, fill in the optional Artist field."
-                    )
-                else:
-                    st.warning(
-                        f"Could not confirm ‘{campaign_track_lookup}’ in Apple Music/iTunes. "
-                        "Check the spelling. You can still continue because regional, niche, "
-                        "or unreleased tracks may not be listed."
-                    )
-        with c3:
-            market_choice = st.selectbox("Market", MARKET_OPTIONS, index=0)
-            paste_market = "" if market_choice == "Other / no market" else market_choice
-        links = parse_links(link_text)
-        market_label = paste_market if paste_market else "Other"
-        st.markdown(f"<div class='pill-row'><span class='pill green'>Links detected: {len(links)}</span><span class='pill blue'>Market: {esc(market_label)}</span></div>", unsafe_allow_html=True)
-        if st.button("Add pasted links to batch", type="primary", width="stretch"):
-            if not links:
-                st.warning("Paste at least one valid TikTok or Instagram post link first.")
-            else:
-                rows = []
-                for l in links:
-                    detected_platform = post_platform(l)
-                    rows.append({
-                        "Platform": detected_platform,
-                        "Source": "Pasted links",
-                        "Input Type": "Pasted",
-                        "Link": l,
-                        "Market": paste_market,
-                        # Keep the user-entered campaign track for audio-version
-                        # comparison. When blank, the adapter falls back to the
-                        # scraped platform music metadata during tagging.
-                        "Track": safe_str(paste_track),
-                        "Campaign Artist": safe_str(paste_artist),
-                        "Viral Date": "",
-                        "Date": "",
-                        "Creator": extract_creator(l),
-                        "Views": 0,
-                        "Likes": 0,
-                        "Comments": 0,
-                        "Shares": 0,
-                        "Saves": 0,
-                        "Metrics Unavailable": "Shares, Saves" if detected_platform == INSTAGRAM_REELS else "",
-                        "Total Engagement": 0,
-                    })
-                added, skipped = append_to_batch(pd.DataFrame(rows))
-                st.session_state.last_message = f"Added {added} pasted links. Skipped {skipped} duplicate links."
-                st.rerun()
-        st.markdown("</div>", unsafe_allow_html=True)
+    platform_tabs = st.tabs(["TikTok", "Instagram Reels"])
+    with platform_tabs[0]:
+        render_platform_add_posts_v68_43(TIKTOK, drama_audio_note)
+    with platform_tabs[1]:
+        render_platform_add_posts_v68_43(INSTAGRAM_REELS, drama_audio_note)
 
     if st.session_state.last_message:
         st.markdown(f"<div class='good-note'>{esc(st.session_state.last_message)}</div>", unsafe_allow_html=True)

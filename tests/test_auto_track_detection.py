@@ -55,7 +55,10 @@ class AutoTrackDetectionTests(unittest.TestCase):
         app_source = (Path(__file__).resolve().parents[1] / "app.py").read_text(
             encoding="utf-8"
         )
-        paste_section = app_source[app_source.index("with paste_tab:"):]
+        paste_section = app_source[
+            app_source.index("def render_platform_add_posts_v68_43") :
+            app_source.index("# Application shell and workflow pages")
+        ]
         self.assertLess(
             paste_section.index('st.info(drama_audio_note'),
             paste_section.index('"Campaign track / sound name (optional)"'),
